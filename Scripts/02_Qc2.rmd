@@ -1,0 +1,215 @@
+---
+title: "R Notebook"
+output: html_notebook
+author: "Darshan"
+---
+
+```{r}
+library(Seurat)
+library(SoupX)
+library(DropletUtils)
+library(Matrix)
+library(tidyverse)
+library(Hmisc)
+library(DoubletFinder)
+```
+
+```{r}
+setwd("/media/robb-e432/mr.ten/Data/CSF Paper/Analysis")
+```
+
+```{r}
+data <- readRDS("All.merged.rds")
+```
+
+Add percent.mt and subset
+```{r}
+# Add percent mitochondrial gene expression
+data[["percent.mt"]] <- PercentageFeatureSet(data, pattern = "^MT-")
+
+
+
+```
+
+```{r}
+VlnPlot(data,
+        features = c("nFeature_RNA",
+                     "nCount_RNA"),
+        group.by = "Diagnosis",
+        log = TRUE,
+        pt.size = 0,
+        ncol = 2)
+
+VlnPlot(data, 
+        features = "percent.mt",
+        group.by = "Diagnosis",
+        log = TRUE,
+        pt.size = 0,)
+```
+
+
+```{r}
+# Filter: Keep only singlets and cells with <10% MT
+data <- subset(data, subset = DF.classifications == "Singlet" & percent.mt < 10)
+```
+
+```{r}
+VlnPlot(data,
+        features = c("nFeature_RNA",
+                     "nCount_RNA"),
+        group.by = "Diagnosis",
+        log = TRUE,
+        pt.size = 0,
+        ncol = 2)
+
+VlnPlot(data, 
+        features = "percent.mt",
+        group.by = "Diagnosis",
+        log = TRUE,
+        pt.size = 0,)
+```
+
+Plots
+```{r}
+dir.create("QC_Plots", showWarnings = FALSE)
+```
+P1
+```{r}
+Idents(data) <- 'ID'
+
+p1 <- VlnPlot(data, features = "nFeature_RNA", pt.size = 0) +
+  theme_minimal() +
+  theme(legend.position = "none", axis.text.x = element_text(size = 8)) +
+  labs(x = "Sample ID", y = "Number of Features", title = "nFeature per Sample ID")
+ggsave("QC_Plots/nFeature_by_ID.pdf", p1, width = 8, height = 4)
+p1
+```
+p2
+```{r}
+p2 <- VlnPlot(data, features = "nCount_RNA", pt.size = 0) +
+  theme_minimal() +
+  theme(legend.position = "none", axis.text.x = element_text(size = 8)) +
+  labs(x = "Sample ID", y = "Number of Counts", title = "nCount per Sample ID")
+ggsave("QC_Plots/nCount_by_ID.pdf", p2, width = 8, height = 4)
+p2
+
+```
+p3
+```{r}
+p3 <- VlnPlot(data, features = "percent.mt", pt.size = 0) +
+  theme_minimal() +
+  theme(legend.position = "none", axis.text.x = element_text(size = 8)) +
+  labs(x = "Sample ID", y = "Percent Mitochondrial", title = "percent.mt per Sample ID")
+ggsave("QC_Plots/percentMT_by_ID.pdf", p3, width = 8, height = 4)
+p3
+
+```
+ScatterPlots
+p4
+```{r}
+p4 <- FeatureScatter(data, feature1 = "nCount_RNA", feature2 = "percent.mt") +
+  theme_minimal() +
+  geom_hline(yintercept = 10, linetype = 2, color = "gray") +
+  labs(title = "percent.mt vs nCount")
+ggsave("QC_Plots/percentMT_vs_nCount.pdf", p4, width = 5, height = 4)
+p4
+
+```
+p5
+```{r}
+p5 <- FeatureScatter(data, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +
+  theme_minimal() +
+  geom_vline(xintercept = 20000, linetype = 2, color = "gray") +
+  geom_hline(yintercept = 4000, linetype = 2, color = "gray") +
+  labs(title = "nFeature vs nCount")
+ggsave("QC_Plots/nFeature_vs_nCount.pdf", p5, width = 5, height = 4)
+p5
+
+```
+Violin Plots for age diagnosos and sort day
+```{r}
+data$age <- factor(data$age, levels = sort(unique(data$age)))
+
+```
+by age p6
+```{r}
+Idents(data) <- 'age'
+
+p6 <- VlnPlot(data, features = "nFeature_RNA", pt.size = 0) +
+  theme_minimal() +
+  labs(title = "nFeature by Age", x = "Age", y = "Number of Features")
+ggsave("QC_Plots/nFeature_by_age.pdf", p6, width = 8, height = 4)
+p6
+
+```
+by diagnosis p7
+```{r}
+Idents(data) <- 'Diagnosis'
+
+p7 <- VlnPlot(data, features = "nFeature_RNA", pt.size = 0) +
+  theme_minimal() +
+  labs(title = "nFeature by Diagnosis", x = "Diagnosis")
+ggsave("QC_Plots/nFeature_by_diagnosis.pdf", p7, width = 3, height = 4)
+p7
+
+
+```
+by sort data p8
+```{r}
+Idents(data) <- 'sort_day'
+
+p8 <- VlnPlot(data, features = "nFeature_RNA", pt.size = 0) +
+  theme_minimal() +
+  labs(title = "nFeature by Sort Day", x = "Sort Day")
+ggsave("QC_Plots/nFeature_by_sort_day.pdf", p8, width = 8, height = 4)
+p8
+
+```
+
+SCT transform + PCA + PCA plots
+```{r}
+data <- SCTransform(data, variable.features.n = 1000, vars.to.regress = c("nCount_RNA", "nFeature_RNA"))
+data <- RunPCA(data)
+
+```
+PCA sort day
+```{r}
+Idents(data) <- 'sort_day'
+
+p9 <- DimPlot(data, reduction = "pca", pt.size = 0.5) +
+  theme_minimal() +
+  labs(title = "PCA by Sort Day")
+ggsave("QC_Plots/PCA_by_sort_day.pdf", p9, width = 5, height = 4)
+p9
+
+```
+PCA diagnosis
+```{r}
+Idents(data) <- 'Diagnosis'
+
+p10 <- DimPlot(data, reduction = "pca", pt.size = 0.5) +
+  theme_minimal() +
+  labs(title = "PCA by Diagnosis")
+ggsave("QC_Plots/PCA_by_diagnosis.pdf", p10, width = 5, height = 4)
+p10
+
+```
+PCA Sex
+```{r}
+Idents(data) <- 'sex'
+
+p11 <- DimPlot(data, reduction = "pca", pt.size = 0.5) +
+  theme_minimal() +
+  labs(title = "PCA by Sex")
+ggsave("QC_Plots/PCA_by_diagnosis.pdf", p10, width = 5, height = 4)
+p11
+
+```
+
+```{r}
+saveRDS(data, file = "03_Object.rds")
+```
+
+
+
+
