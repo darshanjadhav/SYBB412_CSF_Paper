@@ -1,0 +1,115 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+setwd("/media/robb-e432/mr.ten/Data/CSF Paper/Analysis")
+```
+
+
+```{r}
+
+gex_dir <- "/media/robb-e432/mr.ten/Data/CSF Paper/Matrices"
+soupx_dir <- "/media/robb-e432/mr.ten/Data/CSF Paper/Analysis/SoupX_Output"
+
+
+source("/media/robb-e432/mr.ten/Data/CSF Paper/Analysis/00_helper_functions.R") 
+
+```
+
+```{r}
+  library(plyr)
+  library(tidyverse)
+  library(Hmisc)
+  library(Seurat)
+  library(Matrix)
+  library(SoupX)
+  library(DropletUtils)
+```
+
+```{r}
+sample_dirs <- list.dirs(gex_dir, recursive = FALSE)
+
+M.genes <- c("CD14", "CD68", "MS4A7", "FCGR3A")
+
+contamination_frac <- setNames(data.frame(matrix(ncol = 2, nrow = 0)),
+                               c("sample", "contamination_frac"))
+
+```
+
+```{r}
+total_start <- Sys.time()
+
+for (dir in sample_dirs) {
+  start_time <- Sys.time()
+  
+  sample <- basename(dir)
+  if (sample == "F5_outs") next
+
+  cat("\n>>> Processing:", sample, "at", format(start_time), "\n")
+
+  soupx <- load10X(dir)
+  seurat <- Read10X(file.path(dir, "filtered_feature_bc_matrix")) %>%
+    CreateSeuratObject()
+
+  seurat <- SCTransform(seurat, variable.features.n = 2000, verbose = FALSE) %>%
+    RunPCA()
+
+  seurat <- RunTSNE(seurat, dims = 1:10) %>%
+    FindNeighbors(dims = 1:10) %>%
+    FindClusters(resolution = 0.3)
+
+  soupx <- setClusters(soupx, setNames(seurat$seurat_clusters, colnames(seurat)))
+
+  M.genes <- c("CD14", "CD68", "MS4A7", "FCGR3A")
+  useToEst <- estimateNonExpressingCells(soupx, nonExpressedGeneList = list(M.genes = M.genes))
+  soupx <- calculateContaminationFraction(soupx, list(M.genes = M.genes), useToEst = useToEst)
+
+  contamination_frac[nrow(contamination_frac) + 1, ] <- c(sample, soupx$metaData$rho[1])
+
+  adj_counts <- adjustCounts(soupx)
+
+  sample_out_dir <- file.path(soupx_dir, sample)
+  dir.create(sample_out_dir, showWarnings = FALSE, recursive = TRUE)
+  DropletUtils:::write10xCounts(sample_out_dir, adj_counts, overwrite = TRUE)
+
+  end_time <- Sys.time()
+  cat(">>> Finished:", sample, "at", format(end_time), "\n")
+  cat(">>> Duration:", round(difftime(end_time, start_time, units = "mins"), 2), "minutes\n")
+}
+
+total_end <- Sys.time()
+cat("Total duration:", round(difftime(total_end, total_start, units = "mins"), 2), "minutes\n")
+
+print(contamination_frac)
+write.csv(contamination_frac, file.path(soupx_dir, "contamination_fractions.csv"), row.names = FALSE)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
